@@ -6,6 +6,8 @@ import datetime
 import argparse
 import os
 
+import time
+
 # Configuration
 DEFAULT_TOKEN = None # No hardcoded token
 HEADERS = {
@@ -52,6 +54,7 @@ def _fetch_comments_private_api_page(subject_id, limit=20, offset=0, token=None)
     Try to fetch comments from Private API (next.bgm.tv)
     Endpoint: https://next.bgm.tv/p1/subjects/{subject_id}/comments
     Supports pagination via limit and offset.
+    Returns: (comments_list, total_count) or (None, 0) on failure
     """
     url = f"https://next.bgm.tv/p1/subjects/{subject_id}/comments"
     params = {
@@ -64,15 +67,17 @@ def _fetch_comments_private_api_page(subject_id, limit=20, offset=0, token=None)
         # Based on curl test, it seems accessible with User-Agent.
         response = requests.get(url, headers=get_headers(token), params=params)
         if response.status_code != 200:
-            return None
+            return None, 0
             
         data = response.json()
+        total_count = data.get('total', 0)
+        
         if isinstance(data, dict) and 'data' in data:
             data_list = data['data']
         elif isinstance(data, list):
             data_list = data
         else:
-            return None
+            return None, 0
                 
         comments = []
         for item in data_list:
@@ -120,23 +125,31 @@ def _fetch_comments_private_api_page(subject_id, limit=20, offset=0, token=None)
                 "content": content
             })
             
-        return comments
+        return comments, total_count
     except Exception as e:
         # print(f"Error fetching from private API: {e}", file=sys.stderr)
-        return None
+        return None, 0
 
-def fetch_comments_private_api(subject_id, limit=20, offset=0, token=None):
+def fetch_comments_private_api(subject_id, limit=20, offset=0, token=None, fetch_all=False, progress_callback=None):
     all_comments = []
     current_offset = offset
-    remaining_limit = limit
+    
+    # If fetch_all is True, limit is ignored initially, we fetch everything
+    remaining_limit = limit if not fetch_all else 999999999
+    
+    first_batch = True
+    total_start_time = time.time()
     
     while remaining_limit > 0:
-        # Private API has a limit of 99 per request
+        start_time = time.time()
+        
+        # Private API has a limit of 99 per request usually, let's use 50 to be safe/standard
         batch_limit = min(remaining_limit, 99)
-        comments = _fetch_comments_private_api_page(subject_id, batch_limit, current_offset, token=token)
+        
+        comments, total_count = _fetch_comments_private_api_page(subject_id, batch_limit, current_offset, token=token)
         
         if comments is None:
-            # If first page fails, return None to trigger fallback
+            # If fetch fails
             if not all_comments:
                 return None
             break
@@ -145,20 +158,45 @@ def fetch_comments_private_api(subject_id, limit=20, offset=0, token=None):
             break
             
         all_comments.extend(comments)
+        fetched_count = len(comments)
         
-        if len(comments) < batch_limit:
-            # Fewer comments returned than requested, meaning we reached the end
+        # Update remaining limit logic
+        if fetch_all and first_batch:
+            # Update remaining_limit based on total count
+            # Calculate how many more we need
+            # Total - what we started at (offset) - what we just got
+            remaining_needed = total_count - offset - fetched_count
+            remaining_limit = remaining_needed
+            first_batch = False
+        else:
+            remaining_limit -= fetched_count
+            
+        current_offset += fetched_count
+        
+        elapsed = time.time() - start_time
+        total_elapsed = time.time() - total_start_time
+
+        if progress_callback:
+            progress_callback(fetched_count, elapsed, remaining_limit if remaining_limit > 0 else 0, len(all_comments), total_elapsed)
+
+        # If we got fewer than requested (and not because we hit the end of total), break
+        # But relying on total_count is better for fetch_all
+        if not fetch_all and fetched_count < batch_limit:
+             break
+             
+        if remaining_limit <= 0:
             break
             
-        remaining_limit -= len(comments)
-        current_offset += len(comments)
+        # Rate limiting: Ensure at least 0.5s between requests
+        if elapsed < 0.5:
+            time.sleep(0.5 - elapsed)
         
     return all_comments
 
-def fetch_comments(subject_id, limit=20, offset=0, token=None):
+def fetch_comments(subject_id, limit=20, offset=0, token=None, fetch_all=False, progress_callback=None):
     # Only use Private API (next.bgm.tv)
     # The scraping logic has been removed as per user request.
-    comments = fetch_comments_private_api(subject_id, limit=limit, offset=offset, token=token)
+    comments = fetch_comments_private_api(subject_id, limit=limit, offset=offset, token=token, fetch_all=fetch_all, progress_callback=progress_callback)
     return comments if comments is not None else []
 
 if __name__ == "__main__":
@@ -166,6 +204,8 @@ if __name__ == "__main__":
     parser.add_argument("subject_arg", help="Subject ID or URL")
     parser.add_argument("--limit", type=int, default=20, help="Number of comments to fetch (default: 20)")
     parser.add_argument("--offset", type=int, default=0, help="Offset for comments (default: 0)")
+    parser.add_argument("--all", action="store_true", help="Fetch all comments (overrides limit)")
+    parser.add_argument("--output", type=str, help="Output file path for JSON (if set, prints progress to stdout)")
     parser.add_argument("--token", type=str, default=None, help="Bangumi API Token (optional, can also be set via BANGUMI_TOKEN env var)")
     
     args = parser.parse_args()
@@ -186,8 +226,32 @@ if __name__ == "__main__":
     else:
          details["subject_id"] = subject_id
 
+    # Progress callback
+    def progress_report(fetched_batch, elapsed_batch, remaining, total_fetched, total_elapsed):
+        # Calculate speed based on total progress
+        if total_elapsed > 0:
+            avg_speed = total_fetched / total_elapsed
+        else:
+            avg_speed = 0
+            
+        if avg_speed > 0:
+            eta_seconds = remaining / avg_speed
+            if eta_seconds < 60:
+                eta_str = f"{eta_seconds:.1f}s"
+            else:
+                eta_str = f"{eta_seconds/60:.1f}m"
+        else:
+            eta_str = "N/A"
+            
+        msg = f"Fetched {fetched_batch} comments in {elapsed_batch:.2f}s. Remaining: {remaining}. Total: {total_fetched} (Speed: {avg_speed:.1f}/s, ETA: {eta_str})"
+        
+        if args.output:
+            print(msg)
+        else:
+             print(msg, file=sys.stderr)
+
     # Fetch comments
-    comments = fetch_comments(subject_id, limit=args.limit, offset=args.offset, token=token)
+    comments = fetch_comments(subject_id, limit=args.limit, offset=args.offset, token=token, fetch_all=args.all, progress_callback=progress_report)
     
     output = {
         "subject_id": subject_id,
@@ -197,4 +261,9 @@ if __name__ == "__main__":
         "comments": comments
     }
 
-    print(json.dumps(output, indent=2, ensure_ascii=False))
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(output, f, indent=2, ensure_ascii=False)
+        print(f"Done. Output written to {args.output}")
+    else:
+        print(json.dumps(output, indent=2, ensure_ascii=False))

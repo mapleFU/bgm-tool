@@ -31,6 +31,7 @@ This skill takes the JSON output from `bangumi-client` and uses an LLM (default:
 - `--provider`: The LLM provider (default: `deepseek`). Currently supports `deepseek`, `stepfun`, and `openai-compatible`.
 - `--base-url`: Custom API base URL (required for `openai-compatible`, optional for `stepfun` which defaults to `https://api.stepfun.com/v1`).
 - `--model`: Model name (default: `deepseek-chat`). For `stepfun`, use `step-3.5-flash` or similar.
+- `--batch-size`: Number of comments per batch for large files (default: 50). Automatically splits large inputs into chunks to avoid token limits.
 
 ## Output Format
 

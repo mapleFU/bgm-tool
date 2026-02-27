@@ -19,14 +19,26 @@ To use this skill, run the provided Python script with a Subject ID or URL.
 ### Command
 
 ```bash
-python3 skills/bangumi-client/fetch_bangumi.py <subject_id_or_url> --token <optional_token>
+python3 skills/bangumi-client/fetch_bangumi.py <subject_id_or_url> --token <optional_token> [--limit <number>] [--all]
 ```
+
+### Options
+
+- `--limit N`: Fetch N comments (default: 20).
+- `--all`: Fetch ALL comments (automatically handles pagination).
+- `--offset N`: Start fetching from offset N.
+- `--token TOKEN`: Use a specific API token.
 
 ### Examples
 
 - Get info for Subject ID 127832:
   ```bash
   python3 skills/bangumi-client/fetch_bangumi.py 127832
+  ```
+
+- Get ALL comments for a subject:
+  ```bash
+  python3 skills/bangumi-client/fetch_bangumi.py 127832 --all
   ```
 
 - Get info for a URL:
