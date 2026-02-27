@@ -134,11 +134,12 @@ def format_comments_for_llm(data):
         user = comment.get("user", "Unknown")
         rating = comment.get("rating", "N/A")
         date = comment.get("date", "Unknown Date")
-        status = comment.get("status", "")
-        content = comment.get("content", "").strip()
+        # status = comment.get("status", "") # Status is less critical for summary, omitting to save tokens
+        content = comment.get("content", "").strip().replace('\n', ' ') # Flatten content
         
-        comments_text += f"{i}. [User: {user}, Rating: {rating}, Date: {date}, Status: {status}]\n"
-        comments_text += f"   Content: {content}\n\n"
+        # Compact format:
+        # 1. [Rating:8] Content... (User: xxx, Date: yyyy-mm-dd)
+        comments_text += f"{i}. [Rating:{rating}] {content} (User: {user}, Date: {date})\n"
         
     prompt = ANALYSIS_TEMPLATE.format(
         title=title,

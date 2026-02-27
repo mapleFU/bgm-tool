@@ -1,6 +1,5 @@
 import sys
 import requests
-from bs4 import BeautifulSoup
 import re
 import json
 import datetime
@@ -157,97 +156,10 @@ def fetch_comments_private_api(subject_id, limit=20, offset=0, token=None):
     return all_comments
 
 def fetch_comments(subject_id, limit=20, offset=0, token=None):
-    # Priority 1: Private API
+    # Only use Private API (next.bgm.tv)
+    # The scraping logic has been removed as per user request.
     comments = fetch_comments_private_api(subject_id, limit=limit, offset=offset, token=token)
-    if comments is not None and len(comments) > 0:
-        return comments
-
-    # Priority 2: Web Scraping (Fallback)
-    # Note: Scraping usually only gets the first page (~20 comments) easily without complex logic
-    # So if offset > 0, we might return empty or warn.
-    if offset > 0:
-        return []
-
-    url = f"https://bgm.tv/subject/{subject_id}"
-    try:
-        # For scraping, we don't strictly need the Bearer token, but User-Agent is crucial.
-        scrape_headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"}
-        response = requests.get(url, headers=scrape_headers)
-        response.encoding = 'utf-8' # Force UTF-8 encoding
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        comments = []
-        comment_box = soup.find('div', id='comment_box')
-        if not comment_box:
-            return []
-            
-        items = comment_box.find_all('div', class_='item')
-        for item in items[:20]: # Limit to 20
-            try:
-                user_elem = item.find('a', class_='avatar')
-                user = user_elem.get_text(strip=True) if user_elem else "Unknown"
-                if not user and item.get('data-item-user'):
-                     user = item.get('data-item-user')
-
-                # Try to extract rating from class starsN (e.g. stars8)
-                rating = None
-                stars_span = item.find('span', class_=re.compile(r'stars\d+'))
-                if stars_span:
-                    classes = stars_span.get('class', [])
-                    for cls in classes:
-                        m = re.match(r'stars(\d+)', cls)
-                        if m:
-                            rating = int(m.group(1))
-                            break
-
-                text_div = item.find('div', class_='text')
-
-                # Extract date and status
-                date = ""
-                status = ""
-                
-                # The structure is often: <small class="grey">Status</small> <small class="grey">@ Date</small>
-                # Sometimes status is missing or date is in a different format
-                small_tags = text_div.find_all('small', class_='grey')
-                for tag in small_tags:
-                    tag_text = tag.get_text(strip=True)
-                    if tag_text.startswith('@'):
-                        date = tag_text.lstrip('@').strip()
-                    else:
-                        status = tag_text
-
-                # Extract pure comment content
-                # The comment text is usually in a <p class="comment"> tag inside .text
-                # OR it's just text nodes mixed with other elements.
-                # Looking at the HTML: <p class="comment">Content</p> is common.
-                comment_p = text_div.find('p', class_='comment')
-                if comment_p:
-                    content = comment_p.get_text(strip=True)
-                else:
-                    # Fallback: get text but exclude the small tags and user link
-                    # This is trickier, let's try to get text from children that are not small/a/span
-                    # But the previous implementation `text_div.get_text` included everything.
-                    # Let's try to remove known elements.
-                    temp_div = BeautifulSoup(str(text_div), 'html.parser') # Clone to not modify original
-                    for s in temp_div.find_all(['small', 'a', 'span', 'div']): # Remove metadata
-                        s.decompose()
-                    content = temp_div.get_text(" ", strip=True)
-
-                comments.append({
-                    "user": user,
-                    "rating": rating,
-                    "date": date,
-                    "status": status,
-                    "content": content
-                })
-            except Exception as e:
-                continue
-                
-        return comments
-    except Exception as e:
-        # print(f"Error scraping comments: {e}", file=sys.stderr)
-        return []
+    return comments if comments is not None else []
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch Bangumi subject details and comments.")
