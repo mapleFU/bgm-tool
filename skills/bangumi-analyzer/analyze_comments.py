@@ -20,7 +20,7 @@ class LLMBackend:
         data = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "You are a helpful assistant that analyzes Bangumi anime reviews."},
+                {"role": "system", "content": "You are a helpful assistant that analyzes user comments/reviews from entertainment/community websites."},
                 {"role": "user", "content": prompt}
             ],
             "stream": False
@@ -34,7 +34,7 @@ class LLMBackend:
             return f"Error calling API: {e}"
 
 ANALYSIS_TEMPLATE = """
-请分析以下关于 Bangumi 条目 "{title}" (ID: {subject_id}) 的评论数据。
+请分析以下来自 {source} 的条目 "{title}" (ID: {item_id}) 的评论数据。
 条目总评分: {score} (评分人数: {count})
 
 评论内容如下:
@@ -71,7 +71,7 @@ ANALYSIS_TEMPLATE = """
 """
 
 BATCH_ANALYSIS_TEMPLATE = """
-请分析以下关于 Bangumi 条目 "{title}" (ID: {subject_id}) 的一部分评论数据（第 {start_index} 到 {end_index} 条）。
+请分析以下来自 {source} 的条目 "{title}" (ID: {item_id}) 的一部分评论数据（第 {start_index} 到 {end_index} 条）。
 
 评论内容如下:
 {comments_text}
@@ -88,7 +88,7 @@ BATCH_ANALYSIS_TEMPLATE = """
 """
 
 FINAL_SUMMARY_TEMPLATE = """
-以下是关于 Bangumi 条目 "{title}" (ID: {subject_id}) 的多批评论分析汇总。
+以下是来自 {source} 的条目 "{title}" (ID: {item_id}) 的多批评论分析汇总。
 条目总评分: {score} (评分人数: {count})
 
 --- 分析汇总开始 ---
@@ -123,8 +123,22 @@ FINAL_SUMMARY_TEMPLATE = """
 请确保输出格式清晰，使用 Markdown 格式。
 """
 
-def get_subject_metadata(data):
-    subject_id = data.get("subject_id", "Unknown")
+def get_item_metadata(data):
+    source = data.get("source")
+    url = data.get("url") or ""
+    if not source:
+        if "subject_id" in data:
+            source = "bangumi"
+        elif "product_id" in data:
+            source = "dlsite"
+        elif "game_id" in data and "freem.ne.jp" in url:
+            source = "freem"
+        elif "game_id" in data and "freegame-mugen.jp" in url:
+            source = "freegame-mugen"
+        else:
+            source = "unknown"
+
+    item_id = data.get("subject_id") or data.get("product_id") or data.get("game_id") or data.get("id") or "Unknown"
     title = data.get("title", "Unknown Title")
     rating_info = data.get("rating", {})
     score = "N/A"
@@ -144,7 +158,7 @@ def get_subject_metadata(data):
                  count = "N/A"
         else:
              count = count_val
-    return subject_id, title, score, count
+    return source, item_id, title, score, count
 
 def format_comments_text(comments, start_index=1):
     comments_text = ""
@@ -163,13 +177,14 @@ def format_comments_for_llm(data):
     """
     Format the JSON data into a structured prompt for the LLM using the template.
     """
-    subject_id, title, score, count = get_subject_metadata(data)
+    source, item_id, title, score, count = get_item_metadata(data)
     comments = data.get("comments", [])
     comments_text = format_comments_text(comments)
         
     prompt = ANALYSIS_TEMPLATE.format(
+        source=source,
         title=title,
-        subject_id=subject_id,
+        item_id=item_id,
         score=score,
         count=count,
         comments_text=comments_text,
@@ -180,12 +195,13 @@ def format_comments_for_llm(data):
     return prompt
 
 def format_batch_prompt(data, comments_batch, start_index):
-    subject_id, title, score, count = get_subject_metadata(data)
+    source, item_id, title, score, count = get_item_metadata(data)
     comments_text = format_comments_text(comments_batch, start_index)
     
     prompt = BATCH_ANALYSIS_TEMPLATE.format(
+        source=source,
         title=title,
-        subject_id=subject_id,
+        item_id=item_id,
         start_index=start_index,
         end_index=start_index + len(comments_batch) - 1,
         comments_text=comments_text
@@ -193,15 +209,16 @@ def format_batch_prompt(data, comments_batch, start_index):
     return prompt
 
 def format_final_summary_prompt(data, batch_summaries):
-    subject_id, title, score, count = get_subject_metadata(data)
+    source, item_id, title, score, count = get_item_metadata(data)
     
     summaries_text = ""
     for i, summary in enumerate(batch_summaries, 1):
         summaries_text += f"### Batch {i} Analysis:\n{summary}\n\n"
         
     prompt = FINAL_SUMMARY_TEMPLATE.format(
+        source=source,
         title=title,
-        subject_id=subject_id,
+        item_id=item_id,
         score=score,
         count=count,
         summaries_text=summaries_text,
@@ -211,7 +228,7 @@ def format_final_summary_prompt(data, batch_summaries):
     return prompt
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze Bangumi comments using an LLM.")
+    parser = argparse.ArgumentParser(description="Analyze comments/reviews JSON using an LLM.")
     parser.add_argument("input_file", nargs="?", help="Path to JSON file containing comments (reads from stdin if omitted)")
     parser.add_argument("--api-key", help="LLM API Key")
     parser.add_argument("--provider", default="deepseek", choices=["deepseek", "stepfun", "openai-compatible"], help="LLM Provider")

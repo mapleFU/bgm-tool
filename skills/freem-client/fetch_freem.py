@@ -4,14 +4,19 @@ import os
 import re
 import sys
 import time
+import pathlib
 
 import requests
 from bs4 import BeautifulSoup
 
 
-HEADERS = {
-    "User-Agent": "Trae/1.0 (freem-client)",
-}
+try:
+    from http_common import get_default_headers
+except Exception:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+    from http_common import get_default_headers
+
+HEADERS = get_default_headers("freem-client")
 
 GAME_URL_PATTERN = r"/win/game/(\d+)"
 REVIEW_URL_PATTERN = r"/review/game/win/(\d+)"

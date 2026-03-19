@@ -7,12 +7,17 @@ import argparse
 import os
 
 import time
+import pathlib
 
 # Configuration
 DEFAULT_TOKEN = None # No hardcoded token
-HEADERS = {
-    "User-Agent": "Trae/1.0 (bangumi-client)"
-}
+try:
+    from http_common import get_default_headers
+except Exception:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+    from http_common import get_default_headers
+
+HEADERS = get_default_headers("bangumi-client")
 BASE_URL = "https://api.bgm.tv/v0"
 SUBJECT_URL_PATTERN = r"subject/(\d+)"
 
