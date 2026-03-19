@@ -26,6 +26,9 @@
 - DLsite:
   - Client: `skills/dlsite-client/fetch_dlsite.py`
   - Strategy: prefer official JSON endpoints (`/product/info/ajax` + `/api/review`), fallback to HTML for title
+- Kakuyomu (カクヨム):
+  - Client: `skills/kakuyomu-client/fetch_kakuyomu.py`
+  - Strategy: use official GraphQL endpoint (`https://kakuyomu.jp/graphql`) for work metadata + review pagination
 
 ## Normalized Comment JSON Shape
 - Top-level: `source`, `<id>`, `url`, `title`, `rating`, `comments_count`, `comments`
@@ -48,5 +51,7 @@
   - `python3 skills/freegame-mugen-client/fetch_freegame_mugen.py <id_or_url> --all --output freegame_mugen_<id>.json`
 - DLsite:
   - `python3 skills/dlsite-client/fetch_dlsite.py <id_or_url> --all --output dlsite_<product_id>.json`
+- Kakuyomu:
+  - `python3 skills/kakuyomu-client/fetch_kakuyomu.py <id_or_url> --all --output kakuyomu_<work_id>.json`
 - Analyze (any source):
   - `python3 skills/bangumi-analyzer/analyze_comments.py <file.json> --api-key <KEY> --provider deepseek`

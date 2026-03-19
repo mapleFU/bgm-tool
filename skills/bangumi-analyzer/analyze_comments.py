@@ -131,6 +131,8 @@ def get_item_metadata(data):
             source = "bangumi"
         elif "product_id" in data:
             source = "dlsite"
+        elif "work_id" in data or "kakuyomu.jp" in url:
+            source = "kakuyomu"
         elif "game_id" in data and "freem.ne.jp" in url:
             source = "freem"
         elif "game_id" in data and "freegame-mugen.jp" in url:
@@ -138,7 +140,14 @@ def get_item_metadata(data):
         else:
             source = "unknown"
 
-    item_id = data.get("subject_id") or data.get("product_id") or data.get("game_id") or data.get("id") or "Unknown"
+    item_id = (
+        data.get("subject_id")
+        or data.get("product_id")
+        or data.get("work_id")
+        or data.get("game_id")
+        or data.get("id")
+        or "Unknown"
+    )
     title = data.get("title", "Unknown Title")
     rating_info = data.get("rating", {})
     score = "N/A"
