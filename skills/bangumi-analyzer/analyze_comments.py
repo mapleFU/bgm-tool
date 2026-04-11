@@ -123,6 +123,18 @@ FINAL_SUMMARY_TEMPLATE = """
 请确保输出格式清晰，使用 Markdown 格式。
 """
 
+def get_mode_instructions(mode):
+    if mode == "no-spoilers":
+        return """
+
+【输出限制：禁止剧透】
+1. 不要透露关键剧情、反转、真相、结局、角色生死/身份等会影响首次观看/游玩体验的信息。
+2. 不要逐字引用包含剧情细节的评论原文；如需要举例，只能引用不含剧情细节的短语/关键词（例如对作画、配乐、节奏、演出、玩法、系统、世界观设定层面的泛化描述）。
+3. 如果某条评论的核心观点离不开剧透，请改写成抽象总结（不含具体事件与细节），并在“原文摘录”位置使用“（含剧透内容已省略）”。
+4. 在总体总结中可以评价优缺点与情绪倾向，但必须保持无剧透表述。
+"""
+    return ""
+
 def get_item_metadata(data):
     source = data.get("source")
     url = data.get("url") or ""
@@ -203,7 +215,10 @@ def format_comments_for_llm(data):
     
     return prompt
 
-def format_batch_prompt(data, comments_batch, start_index):
+def format_comments_for_llm_with_mode(data, mode):
+    return format_comments_for_llm(data) + get_mode_instructions(mode)
+
+def format_batch_prompt(data, comments_batch, start_index, mode):
     source, item_id, title, score, count = get_item_metadata(data)
     comments_text = format_comments_text(comments_batch, start_index)
     
@@ -215,9 +230,9 @@ def format_batch_prompt(data, comments_batch, start_index):
         end_index=start_index + len(comments_batch) - 1,
         comments_text=comments_text
     )
-    return prompt
+    return prompt + get_mode_instructions(mode)
 
-def format_final_summary_prompt(data, batch_summaries):
+def format_final_summary_prompt(data, batch_summaries, mode):
     source, item_id, title, score, count = get_item_metadata(data)
     
     summaries_text = ""
@@ -234,7 +249,7 @@ def format_final_summary_prompt(data, batch_summaries):
         user_placeholder="{user}",
         rating_placeholder="{rating}"
     )
-    return prompt
+    return prompt + get_mode_instructions(mode)
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze comments/reviews JSON using an LLM.")
@@ -244,6 +259,7 @@ def main():
     parser.add_argument("--base-url", help="Custom API Base URL (required for openai-compatible)")
     parser.add_argument("--model", default="deepseek-chat", help="Model name")
     parser.add_argument("--batch-size", type=int, default=1000, help="Number of comments per batch for large files (default: 50)")
+    parser.add_argument("--mode", default="default", choices=["default", "no-spoilers"], help="Output mode: default, or no-spoilers")
 
     args = parser.parse_args()
 
@@ -310,7 +326,7 @@ def main():
             print(f"Processing batch {idx+1}/{num_batches} (Comments {start_idx+1}-{end_idx})...", file=sys.stderr)
             
             # Format prompt for this batch
-            prompt = format_batch_prompt(data, batch_comments, start_idx + 1)
+            prompt = format_batch_prompt(data, batch_comments, start_idx + 1, args.mode)
             
             # Generate summary for this batch
             try:
@@ -327,14 +343,14 @@ def main():
             batch_summaries = [f.result() for f in futures]
         
         print("Generating final summary...", file=sys.stderr)
-        final_prompt = format_final_summary_prompt(data, batch_summaries)
+        final_prompt = format_final_summary_prompt(data, batch_summaries, args.mode)
         result = backend.generate(final_prompt)
         print(result)
         
     else:
         # Single shot mode
         print(f"Processing {total_comments} comments...", file=sys.stderr)
-        prompt = format_comments_for_llm(data)
+        prompt = format_comments_for_llm_with_mode(data, args.mode)
         print("Generating analysis...", file=sys.stderr)
         result = backend.generate(prompt)
         print(result)
